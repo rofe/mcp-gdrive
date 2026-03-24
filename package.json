@@ -1,0 +1,25 @@
+{
+  "name": "mcp-gdrive",
+  "version": "1.0.0",
+  "description": "MCP server for Google Drive — list, search, read, write, create, and upload files",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "mcp-gdrive": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "auth": "node src/auth.js"
+  },
+  "keywords": [
+    "mcp",
+    "google-drive"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "googleapis": "^171.4.0",
+    "zod": "^4.3.6"
+  }
+}

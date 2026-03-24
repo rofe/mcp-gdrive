@@ -1,0 +1,4 @@
+node_modules/
+.gdrive-token.json
+credentials.json
+.DS_Store
