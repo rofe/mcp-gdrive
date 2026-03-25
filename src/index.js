@@ -3,7 +3,7 @@
 /**
  * MCP server for Google Drive.
  *
- * Tools: list_files, search_files, read_file, create_file, write_file, upload_file, insert_image, replace_image
+ * Tools: list_files, search_files, read_file, create_file, write_file, upload_file, copy_file, insert_image, replace_image
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -16,6 +16,7 @@ import {
   createFile,
   updateFile,
   uploadFile,
+  copyFile,
   insertImage,
   replaceImage,
 } from './drive.js';
@@ -154,6 +155,26 @@ server.registerTool(
   },
   async ({ name, localPath, mimeType, folderId }) => {
     const result = await uploadFile({ name, localPath, mimeType, folderId });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── copy_file ──────────────────────────────────────────────
+
+server.registerTool(
+  'copy_file',
+  {
+    title: 'Copy File',
+    description:
+      'Create a copy of an existing Google Drive file. Preserves all content, formatting, and embedded images.',
+    inputSchema: {
+      fileId: z.string().describe('The Google Drive file ID to copy.'),
+      name: z.string().describe('Name for the new copy.'),
+      folderId: z.string().optional().describe('Parent folder ID for the copy. Omit to use the same folder.'),
+    },
+  },
+  async ({ fileId, name, folderId }) => {
+    const result = await copyFile({ fileId, name, folderId });
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );

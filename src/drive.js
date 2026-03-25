@@ -294,6 +294,19 @@ export async function insertImage({ fileId, uri, index = 1 }) {
   return { inserted: true, uri, locationIndex: location };
 }
 
+export async function copyFile({ fileId, name, folderId }) {
+  const drive = getDrive();
+  const requestBody = { name };
+  if (folderId) requestBody.parents = [folderId];
+
+  const res = await drive.files.copy({
+    fileId,
+    requestBody,
+    fields: DEFAULT_FIELDS,
+  });
+  return res.data;
+}
+
 export async function replaceImage({ fileId, imageIndex, uri }) {
   const { objectIds, inlineObjects } = await getImageObjectIds(fileId);
 
