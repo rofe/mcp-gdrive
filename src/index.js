@@ -3,7 +3,7 @@
 /**
  * MCP server for Google Drive.
  *
- * Tools: list_files, search_files, read_file, create_file, write_file, upload_file, copy_file, insert_image, replace_image
+ * Tools: list_files, search_files, read_file, create_file, write_file, upload_file, delete_file, copy_file, insert_image, replace_image
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -16,6 +16,7 @@ import {
   createFile,
   updateFile,
   uploadFile,
+  deleteFile,
   copyFile,
   insertImage,
   replaceImage,
@@ -155,6 +156,24 @@ server.registerTool(
   },
   async ({ name, localPath, mimeType, folderId }) => {
     const result = await uploadFile({ name, localPath, mimeType, folderId });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── delete_file ────────────────────────────────────────────
+
+server.registerTool(
+  'delete_file',
+  {
+    title: 'Delete File',
+    description:
+      'Permanently delete a file from Google Drive. This cannot be undone.',
+    inputSchema: {
+      fileId: z.string().describe('The Google Drive file ID to delete.'),
+    },
+  },
+  async ({ fileId }) => {
+    const result = await deleteFile(fileId);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );

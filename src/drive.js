@@ -334,6 +334,12 @@ export async function replaceImage({ fileId, imageIndex, uri }) {
   };
 }
 
+export async function deleteFile(fileId) {
+  const drive = getDrive();
+  await drive.files.delete({ fileId });
+  return { deleted: true, fileId };
+}
+
 export async function uploadFile({ name, localPath, mimeType, folderId }) {
   const drive = getDrive();
   const fileMetadata = { name };
