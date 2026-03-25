@@ -3,7 +3,7 @@
 /**
  * MCP server for Google Drive.
  *
- * Tools: list_files, search_files, read_file, create_file, write_file, upload_file, replace_image
+ * Tools: list_files, search_files, read_file, create_file, write_file, upload_file, insert_image, replace_image
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -16,6 +16,7 @@ import {
   createFile,
   updateFile,
   uploadFile,
+  insertImage,
   replaceImage,
 } from './drive.js';
 
@@ -153,6 +154,26 @@ server.registerTool(
   },
   async ({ name, localPath, mimeType, folderId }) => {
     const result = await uploadFile({ name, localPath, mimeType, folderId });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── insert_image ───────────────────────────────────────────
+
+server.registerTool(
+  'insert_image',
+  {
+    title: 'Insert Image',
+    description:
+      'Insert an image into a Google Doc at a given document index. Use index 1 to insert at the very beginning of the document. The image must be a publicly accessible URL.',
+    inputSchema: {
+      fileId: z.string().describe('The Google Drive file ID of the Google Doc.'),
+      uri: z.string().describe('Public URL of the image to insert (PNG, JPEG, or GIF, max 50 MB).'),
+      index: z.number().int().min(1).optional().describe('Document body index to insert at (default 1 = beginning of doc).'),
+    },
+  },
+  async ({ fileId, uri, index }) => {
+    const result = await insertImage({ fileId, uri, index });
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );

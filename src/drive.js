@@ -257,6 +257,30 @@ async function getImageObjectIds(documentId) {
   return { objectIds, inlineObjects: doc.inlineObjects || {} };
 }
 
+export async function insertImage({ fileId, uri, index = 1 }) {
+  const docs = getDocs();
+  const { data: doc } = await docs.documents.get({ documentId: fileId });
+
+  // Find the insertion point: beginning of the document body
+  const location = index;
+
+  await docs.documents.batchUpdate({
+    documentId: fileId,
+    requestBody: {
+      requests: [
+        {
+          insertInlineImage: {
+            uri,
+            location: { index: location },
+          },
+        },
+      ],
+    },
+  });
+
+  return { inserted: true, uri, locationIndex: location };
+}
+
 export async function replaceImage({ fileId, imageIndex, uri }) {
   const { objectIds, inlineObjects } = await getImageObjectIds(fileId);
 
