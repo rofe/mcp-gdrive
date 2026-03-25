@@ -194,13 +194,26 @@ export async function readFile(fileId) {
   return { metadata: meta.data, content, images };
 }
 
+const GOOGLE_MIME_TYPES = new Set([
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.google-apps.presentation',
+]);
+
 export async function createFile({ name, content, mimeType = 'text/plain', folderId }) {
   const drive = getDrive();
   const fileMetadata = { name };
   if (folderId) fileMetadata.parents = [folderId];
 
+  // For Google Workspace types, set the target type in metadata and upload as plain text
+  let mediaMimeType = mimeType;
+  if (GOOGLE_MIME_TYPES.has(mimeType)) {
+    fileMetadata.mimeType = mimeType;
+    mediaMimeType = 'text/plain';
+  }
+
   const media = {
-    mimeType,
+    mimeType: mediaMimeType,
     body: Readable.from([content]),
   };
 
