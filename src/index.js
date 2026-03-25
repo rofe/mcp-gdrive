@@ -3,7 +3,7 @@
 /**
  * MCP server for Google Drive.
  *
- * Tools: list_files, search_files, read_file, create_file, write_file, upload_file
+ * Tools: list_files, search_files, read_file, create_file, write_file, upload_file, replace_image
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -16,6 +16,7 @@ import {
   createFile,
   updateFile,
   uploadFile,
+  replaceImage,
 } from './drive.js';
 
 const server = new McpServer({
@@ -70,18 +71,27 @@ server.registerTool(
   {
     title: 'Read File',
     description:
-      'Read the content of a file from Google Drive. Google Docs are exported as plain text, Sheets as CSV. Returns both metadata and content.',
+      'Read the content of a file from Google Drive. Google Docs are exported with text and embedded images, Sheets as CSV. Returns metadata, content, and any inline images.',
     inputSchema: {
       fileId: z.string().describe('The Google Drive file ID.'),
     },
   },
   async ({ fileId }) => {
     const result = await readFile(fileId);
-    return {
-      content: [
-        { type: 'text', text: `--- Metadata ---\n${JSON.stringify(result.metadata, null, 2)}\n\n--- Content ---\n${result.content}` },
-      ],
-    };
+    const content = [
+      { type: 'text', text: `--- Metadata ---\n${JSON.stringify(result.metadata, null, 2)}\n\n--- Content ---\n${result.content}` },
+    ];
+    // Append embedded images as MCP image content items
+    if (result.images && result.images.length > 0) {
+      result.images.forEach((img, i) => {
+        content.push({
+          type: 'image',
+          data: img.data,
+          mimeType: img.mimeType,
+        });
+      });
+    }
+    return { content };
   },
 );
 
@@ -143,6 +153,26 @@ server.registerTool(
   },
   async ({ name, localPath, mimeType, folderId }) => {
     const result = await uploadFile({ name, localPath, mimeType, folderId });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── replace_image ──────────────────────────────────────────
+
+server.registerTool(
+  'replace_image',
+  {
+    title: 'Replace Image',
+    description:
+      'Replace an embedded image in a Google Doc by its index (1-based, matching [image N] placeholders from read_file). The replacement must be a publicly accessible image URL.',
+    inputSchema: {
+      fileId: z.string().describe('The Google Drive file ID of the Google Doc.'),
+      imageIndex: z.number().int().min(1).describe('1-based index of the image to replace (matches [image N] from read_file output).'),
+      uri: z.string().describe('Public URL of the replacement image (PNG, JPEG, or GIF, max 50 MB).'),
+    },
+  },
+  async ({ fileId, imageIndex, uri }) => {
+    const result = await replaceImage({ fileId, imageIndex, uri });
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );

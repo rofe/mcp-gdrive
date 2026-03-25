@@ -38,10 +38,10 @@ function saveTokens(tokens) {
   fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
 }
 
-let driveInstance;
+let authClient;
 
-export function getDrive() {
-  if (driveInstance) return driveInstance;
+function getAuth() {
+  if (authClient) return authClient;
 
   const { clientId, clientSecret } = getCredentials();
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
@@ -55,8 +55,24 @@ export function getDrive() {
     oauth2Client.setCredentials(merged);
   });
 
-  driveInstance = google.drive({ version: 'v3', auth: oauth2Client });
+  authClient = oauth2Client;
+  return authClient;
+}
+
+let driveInstance;
+
+export function getDrive() {
+  if (driveInstance) return driveInstance;
+  driveInstance = google.drive({ version: 'v3', auth: getAuth() });
   return driveInstance;
+}
+
+let docsInstance;
+
+export function getDocs() {
+  if (docsInstance) return docsInstance;
+  docsInstance = google.docs({ version: 'v1', auth: getAuth() });
+  return docsInstance;
 }
 
 // ---------- helpers ----------
@@ -91,6 +107,45 @@ export async function searchFiles(queryText, { pageSize = 20, pageToken } = {}) 
   return { files: res.data.files, nextPageToken: res.data.nextPageToken };
 }
 
+/**
+ * Strip HTML tags and decode common entities to produce readable plain text.
+ */
+function htmlToText(html) {
+  // Remove style and script blocks
+  let text = html.replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, '');
+  // Convert <br> and block-level closings to newlines
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n');
+  // Strip remaining tags
+  text = text.replace(/<[^>]+>/g, '');
+  // Decode common HTML entities
+  text = text.replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+  // Collapse excessive blank lines
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  return text;
+}
+
+/**
+ * Extract base64-encoded images from HTML <img> tags with data URIs.
+ * Returns { images: [{ mimeType, data }], html } with images replaced by placeholders.
+ */
+function extractImages(html) {
+  const images = [];
+  const cleaned = html.replace(
+    /<img[^>]+src="data:([^;]+);base64,([^"]+)"[^>]*>/gi,
+    (match, mime, data) => {
+      images.push({ mimeType: mime, data });
+      return `[image ${images.length}]`;
+    },
+  );
+  return { images, html: cleaned };
+}
+
 export async function readFile(fileId) {
   const drive = getDrive();
 
@@ -104,19 +159,30 @@ export async function readFile(fileId) {
 
   // Google Workspace files need to be exported
   const exportMap = {
-    'application/vnd.google-apps.document': 'text/plain',
+    'application/vnd.google-apps.document': 'text/html',
     'application/vnd.google-apps.spreadsheet': 'text/csv',
     'application/vnd.google-apps.presentation': 'text/plain',
     'application/vnd.google-apps.drawing': 'image/png',
   };
 
   let content;
+  let images = [];
+
   if (exportMap[mimeType]) {
+    const exportMime = exportMap[mimeType];
     const res = await drive.files.export(
-      { fileId, mimeType: exportMap[mimeType] },
+      { fileId, mimeType: exportMime },
       { responseType: 'text' },
     );
-    content = res.data;
+
+    if (mimeType === 'application/vnd.google-apps.document') {
+      // Extract embedded images from the HTML export
+      const extracted = extractImages(res.data);
+      images = extracted.images;
+      content = htmlToText(extracted.html);
+    } else {
+      content = res.data;
+    }
   } else {
     const res = await drive.files.get(
       { fileId, alt: 'media' },
@@ -125,7 +191,7 @@ export async function readFile(fileId) {
     content = res.data;
   }
 
-  return { metadata: meta.data, content };
+  return { metadata: meta.data, content, images };
 }
 
 export async function createFile({ name, content, mimeType = 'text/plain', folderId }) {
@@ -159,6 +225,63 @@ export async function updateFile({ fileId, content, mimeType = 'text/plain' }) {
     fields: DEFAULT_FIELDS,
   });
   return res.data;
+}
+
+/**
+ * Get the inline image objectIds from a Google Doc in document order.
+ */
+async function getImageObjectIds(documentId) {
+  const docs = getDocs();
+  const { data: doc } = await docs.documents.get({ documentId });
+
+  const objectIds = [];
+  const walk = (elements) => {
+    for (const el of elements) {
+      if (el.paragraph) {
+        for (const pe of el.paragraph.elements) {
+          if (pe.inlineObjectElement) {
+            objectIds.push(pe.inlineObjectElement.inlineObjectId);
+          }
+        }
+      }
+      if (el.table) {
+        for (const row of el.table.tableRows) {
+          for (const cell of row.tableCells) {
+            walk(cell.content);
+          }
+        }
+      }
+    }
+  };
+  walk(doc.body.content);
+  return { objectIds, inlineObjects: doc.inlineObjects || {} };
+}
+
+export async function replaceImage({ fileId, imageIndex, uri }) {
+  const { objectIds, inlineObjects } = await getImageObjectIds(fileId);
+
+  if (imageIndex < 1 || imageIndex > objectIds.length) {
+    throw new Error(
+      `Image index ${imageIndex} out of range. Document has ${objectIds.length} image(s).`,
+    );
+  }
+
+  const objectId = objectIds[imageIndex - 1];
+  const docs = getDocs();
+  await docs.documents.batchUpdate({
+    documentId: fileId,
+    requestBody: {
+      requests: [{ replaceImage: { imageObjectId: objectId, uri } }],
+    },
+  });
+
+  const props = inlineObjects[objectId]?.inlineObjectProperties?.embeddedObject;
+  return {
+    replacedObjectId: objectId,
+    imageIndex,
+    title: props?.title || null,
+    totalImages: objectIds.length,
+  };
 }
 
 export async function uploadFile({ name, localPath, mimeType, folderId }) {
