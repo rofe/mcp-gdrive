@@ -334,6 +334,21 @@ export async function replaceImage({ fileId, imageIndex, uri }) {
   };
 }
 
+export async function createFolder({ name, folderId }) {
+  const drive = getDrive();
+  const fileMetadata = {
+    name,
+    mimeType: 'application/vnd.google-apps.folder',
+  };
+  if (folderId) fileMetadata.parents = [folderId];
+
+  const res = await drive.files.create({
+    requestBody: fileMetadata,
+    fields: DEFAULT_FIELDS,
+  });
+  return res.data;
+}
+
 export async function deleteFile(fileId) {
   const drive = getDrive();
   await drive.files.delete({ fileId });

@@ -3,7 +3,7 @@
 /**
  * MCP server for Google Drive.
  *
- * Tools: list_files, search_files, read_file, create_file, write_file, upload_file, delete_file, copy_file, insert_image, replace_image
+ * Tools: list_files, search_files, read_file, create_file, create_folder, write_file, upload_file, delete_file, delete_folder, copy_file, insert_image, replace_image
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -19,6 +19,7 @@ import {
   deleteFile,
   copyFile,
   insertImage,
+  createFolder,
   replaceImage,
 } from './drive.js';
 
@@ -119,6 +120,25 @@ server.registerTool(
   },
 );
 
+// ── create_folder ──────────────────────────────────────────
+
+server.registerTool(
+  'create_folder',
+  {
+    title: 'Create Folder',
+    description:
+      'Create a new folder in Google Drive.',
+    inputSchema: {
+      name: z.string().describe('Folder name.'),
+      folderId: z.string().optional().describe('Parent folder ID. Omit for root.'),
+    },
+  },
+  async ({ name, folderId }) => {
+    const result = await createFolder({ name, folderId });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
 // ── write_file ──────────────────────────────────────────────
 
 server.registerTool(
@@ -174,6 +194,24 @@ server.registerTool(
   },
   async ({ fileId }) => {
     const result = await deleteFile(fileId);
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── delete_folder ─────────────────────────────────────────
+
+server.registerTool(
+  'delete_folder',
+  {
+    title: 'Delete Folder',
+    description:
+      'Permanently delete a folder and all of its contents from Google Drive. This cannot be undone.',
+    inputSchema: {
+      folderId: z.string().describe('The Google Drive folder ID to delete.'),
+    },
+  },
+  async ({ folderId }) => {
+    const result = await deleteFile(folderId);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
