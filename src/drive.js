@@ -39,20 +39,31 @@ function saveTokens(tokens) {
 }
 
 let authClient;
+let tokenMtimeMs;
 
 function getAuth() {
-  if (authClient) return authClient;
+  if (authClient) {
+    // Reload credentials if the token file changed on disk (e.g. after `npm run auth`).
+    const mtimeMs = fs.statSync(TOKEN_PATH).mtimeMs;
+    if (mtimeMs !== tokenMtimeMs) {
+      authClient.setCredentials(loadTokens());
+      tokenMtimeMs = mtimeMs;
+    }
+    return authClient;
+  }
 
   const { clientId, clientSecret } = getCredentials();
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
-  const tokens = loadTokens();
-  oauth2Client.setCredentials(tokens);
+  oauth2Client.setCredentials(loadTokens());
+  tokenMtimeMs = fs.statSync(TOKEN_PATH).mtimeMs;
 
   // Auto-refresh tokens and persist them
   oauth2Client.on('tokens', (newTokens) => {
-    const merged = { ...tokens, ...newTokens };
+    const merged = { ...oauth2Client.credentials, ...newTokens };
     saveTokens(merged);
     oauth2Client.setCredentials(merged);
+    // Our own write — record its mtime so it isn't mistaken for an external re-auth.
+    tokenMtimeMs = fs.statSync(TOKEN_PATH).mtimeMs;
   });
 
   authClient = oauth2Client;
@@ -62,16 +73,16 @@ function getAuth() {
 let driveInstance;
 
 export function getDrive() {
-  if (driveInstance) return driveInstance;
-  driveInstance = google.drive({ version: 'v3', auth: getAuth() });
+  const auth = getAuth();
+  if (!driveInstance) driveInstance = google.drive({ version: 'v3', auth });
   return driveInstance;
 }
 
 let docsInstance;
 
 export function getDocs() {
-  if (docsInstance) return docsInstance;
-  docsInstance = google.docs({ version: 'v1', auth: getAuth() });
+  const auth = getAuth();
+  if (!docsInstance) docsInstance = google.docs({ version: 'v1', auth });
   return docsInstance;
 }
 
