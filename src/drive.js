@@ -345,6 +345,76 @@ export async function replaceImage({ fileId, imageIndex, uri }) {
   };
 }
 
+/**
+ * Replace specific text within a Google Doc in place, preserving the document's
+ * existing formatting. The replacement text inherits the style of the text it
+ * replaces. All replacements are applied in a single atomic batchUpdate.
+ */
+export async function replaceDocumentText({ fileId, replacements }) {
+  const docs = getDocs();
+
+  const requests = replacements.map(({ find, replace, matchCase = true }) => ({
+    replaceAllText: {
+      containsText: { text: find, matchCase },
+      replaceText: replace,
+    },
+  }));
+
+  const { data } = await docs.documents.batchUpdate({
+    documentId: fileId,
+    requestBody: { requests },
+  });
+
+  const results = (data.replies || []).map((reply, i) => ({
+    find: replacements[i].find,
+    occurrencesChanged: reply.replaceAllText?.occurrencesChanged || 0,
+  }));
+
+  return { fileId, results };
+}
+
+/**
+ * Insert text into a Google Doc at a given character index, optionally styling
+ * the inserted range. By default the inserted text inherits the formatting of
+ * the character preceding the insertion point. Pass fontFamily / bold to force a
+ * style on the inserted range. When inserting at multiple points in one session,
+ * apply edits bottom-up (highest index first) since each insert shifts later
+ * indices. Use "\n" to start a new paragraph and "\v" (vertical tab) for a line
+ * break within the same paragraph.
+ */
+export async function insertDocumentText({ fileId, index, text, fontFamily, bold }) {
+  const docs = getDocs();
+
+  const requests = [{ insertText: { location: { index }, text } }];
+
+  if (fontFamily !== undefined || bold !== undefined) {
+    const textStyle = {};
+    const fields = [];
+    if (fontFamily !== undefined) {
+      textStyle.weightedFontFamily = { fontFamily };
+      fields.push('weightedFontFamily');
+    }
+    if (bold !== undefined) {
+      textStyle.bold = bold;
+      fields.push('bold');
+    }
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: index, endIndex: index + text.length },
+        textStyle,
+        fields: fields.join(','),
+      },
+    });
+  }
+
+  await docs.documents.batchUpdate({
+    documentId: fileId,
+    requestBody: { requests },
+  });
+
+  return { fileId, insertedAt: index, length: text.length, endIndex: index + text.length };
+}
+
 export async function createFolder({ name, folderId }) {
   const drive = getDrive();
   const fileMetadata = {

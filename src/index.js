@@ -3,7 +3,7 @@
 /**
  * MCP server for Google Drive.
  *
- * Tools: list_files, search_files, read_file, create_file, create_folder, write_file, upload_file, delete_file, delete_folder, copy_file, insert_image, replace_image
+ * Tools: list_files, search_files, read_file, create_file, create_folder, write_file, edit_document_text, insert_document_text, upload_file, delete_file, delete_folder, copy_file, insert_image, replace_image
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -21,6 +21,8 @@ import {
   insertImage,
   createFolder,
   replaceImage,
+  replaceDocumentText,
+  insertDocumentText,
 } from './drive.js';
 
 const server = new McpServer({
@@ -155,6 +157,56 @@ server.registerTool(
   },
   async ({ fileId, content, mimeType }) => {
     const result = await updateFile({ fileId, content, mimeType });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── edit_document_text ──────────────────────────────────────
+
+server.registerTool(
+  'edit_document_text',
+  {
+    title: 'Edit Document Text',
+    description:
+      "Surgically replace specific text within a Google Doc in place, preserving the document's existing formatting (headings, fonts, styles). Use this instead of write_file when you want to change existing text without overwriting the whole document. Each replacement finds every occurrence of a string and swaps in new text, which inherits the formatting of the text it replaces. To target a single spot, find on a unique string.",
+    inputSchema: {
+      fileId: z.string().describe('The Google Drive file ID of the Google Doc.'),
+      replacements: z
+        .array(
+          z.object({
+            find: z.string().describe('Exact text to find in the document.'),
+            replace: z.string().describe('Replacement text. Inherits the formatting of the matched text.'),
+            matchCase: z.boolean().optional().describe('Case-sensitive search (default true).'),
+          }),
+        )
+        .min(1)
+        .describe('One or more find/replace operations, applied in a single atomic batch.'),
+    },
+  },
+  async ({ fileId, replacements }) => {
+    const result = await replaceDocumentText({ fileId, replacements });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── insert_document_text ────────────────────────────────────
+
+server.registerTool(
+  'insert_document_text',
+  {
+    title: 'Insert Document Text',
+    description:
+      'Insert new text into a Google Doc at a specific character index, without overwriting the rest of the document. By default the inserted text inherits the formatting of the preceding character; pass fontFamily and/or bold to style the inserted range. Use read_file or a document-structure inspection to find the target index. When inserting at multiple points, apply edits bottom-up (highest index first) since each insert shifts later indices. Use "\\n" to start a new paragraph and "\\v" (vertical tab) for a line break within a paragraph.',
+    inputSchema: {
+      fileId: z.string().describe('The Google Drive file ID of the Google Doc.'),
+      index: z.number().int().min(1).describe('Document body index to insert at (1 = beginning of the body).'),
+      text: z.string().describe('Text to insert.'),
+      fontFamily: z.string().optional().describe('Font family to apply to the inserted text (e.g. "Roboto Mono"). Omit to inherit adjacent formatting.'),
+      bold: z.boolean().optional().describe('Whether the inserted text should be bold. Omit to inherit adjacent formatting.'),
+    },
+  },
+  async ({ fileId, index, text, fontFamily, bold }) => {
+    const result = await insertDocumentText({ fileId, index, text, fontFamily, bold });
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
